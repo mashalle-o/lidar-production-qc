@@ -1,0 +1,36 @@
+# Data — never commit
+data/*
+!data/README.md
+*.las
+*.laz
+*.copc.laz
+*.tif
+*.tiff
+*.vrt
+*.shp
+*.shx
+*.dbf
+*.gpkg
+*.nc
+*.h5
+*.hdf5
+
+# Pipeline outputs (rasters, tiles, gpkg) — regenerate with `pixi run all`
+outputs/
+
+# Environments and build
+.pixi/
+__pycache__/
+*.egg-info/
+dist/
+build/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Quarto
+/.quarto/
+/_site/
+
+# macOS
+.DS_Store

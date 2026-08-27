@@ -1,0 +1,45 @@
+[workspace]
+name = "lidar-production-qc"
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64"]
+
+[dependencies]
+python = ">=3.11,<3.13"
+# point cloud
+pdal = "*"
+python-pdal = "*"
+laspy = "*"
+lazrs-python = "*"
+# raster / vector
+gdal = "*"
+rasterio = "*"
+geopandas = "*"
+shapely = "*"
+pyarrow = "*"
+# analysis
+numpy = "*"
+scipy = "*"
+pandas = "*"
+scikit-learn = "*"
+matplotlib = "*"
+# tooling
+typer = "*"
+pyyaml = "*"
+requests = "*"
+awscli = "*"
+
+[pypi-dependencies]
+lidarqc = { path = ".", editable = true }
+
+[feature.dev.dependencies]
+pytest = "*"
+ruff = "*"
+pre-commit = "*"
+ipykernel = "*"
+
+[environments]
+dev = ["dev"]
+
+[tasks]
+test = "pytest -q"
+lint = "ruff check src tests scripts && ruff format --check src tests scripts"

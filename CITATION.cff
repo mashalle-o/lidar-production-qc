@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Lidar Production QC and Spec Conformance"
+authors:
+  - family-names: Olomi
+    given-names: Mashalle
+version: 0.1.0
+date-released: 2026-08-26
+license: MIT
