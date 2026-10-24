@@ -18,7 +18,7 @@ from pathlib import Path
 
 import geopandas as gpd
 import requests
-from shapely.geometry import box
+from shapely.geometry import Point, box
 
 INDEX_URL = (
     "https://raw.githubusercontent.com/hobuinc/usgs-lidar/master/boundaries/resources.geojson"
@@ -51,7 +51,17 @@ def main() -> None:
     ap.add_argument("--schema", action="store_true", help="print property names and exit")
     ap.add_argument("--force", action="store_true", help="re-download the index")
     ap.add_argument("--out", type=Path, help="write matching footprints to this file")
-    ap.add_argument("--limit", type=int, default=40)
+    ap.add_argument("--limit", type=int, default=30)
+    ap.add_argument("--names-only", action="store_true", help="print matching names and exit")
+    ap.add_argument("--match", help="substring filter on collection name")
+    ap.add_argument(
+        "--point",
+        nargs=2,
+        type=float,
+        action="append",
+        metavar=("LON", "LAT"),
+        help="list every collection covering this point; repeatable",
+    )
     args = ap.parse_args()
 
     gdf = gpd.read_file(fetch_index(force=args.force))
@@ -65,28 +75,55 @@ def main() -> None:
             print(f"  {k!r}: {v!r}")
         return
 
+    if args.point:
+        wgs = gdf.to_crs("EPSG:4326")
+        for lon, lat in args.point:
+            here = wgs[wgs.covers(Point(lon, lat))].copy()
+            here = here.to_crs("EPSG:5070")
+            here["area_km2"] = (here.area / 1e6).round(1)
+            here["est_pts_m2"] = (here["count"] / (here["area_km2"] * 1e6)).round(2)
+            print(f"\n=== ({lon}, {lat}) — {len(here)} collection(s) ===")
+            if len(here):
+                with_pd_options(
+                    here.sort_values("name")[["name", "area_km2", "count", "est_pts_m2"]]
+                )
+        return
+
     minx, miny, maxx, maxy = args.bbox if args.bbox else CALIFORNIA
     aoi = gpd.GeoDataFrame(geometry=[box(minx, miny, maxx, maxy)], crs="EPSG:4326")
     hits = gpd.sjoin(gdf.to_crs("EPSG:4326"), aoi, predicate="intersects").drop(
         columns="index_right"
     )
-    print(f"\n{len(hits)} collections intersect bbox {minx, miny, maxx, maxy}\n")
+    print(f"\n{len(hits)} collections intersect bbox {(minx, miny, maxx, maxy)}")
 
-    # Equal-area projection so the footprint areas are comparable.
-    hits = hits.copy()
-    hits["area_km2"] = hits.to_crs("EPSG:5070").area / 1e6
-    hits["centroid_lon"] = hits.geometry.centroid.x.round(3)
-    hits["centroid_lat"] = hits.geometry.centroid.y.round(3)
+    if args.names_only:
+        for n in sorted(hits["name"]):
+            print(" ", n)
+        return
 
-    name_col = next((c for c in ("name", "id", "url") if c in hits.columns), hits.columns[0])
-    cols = [name_col, "area_km2", "centroid_lon", "centroid_lat"]
-    cols += [c for c in ("count", "points") if c in hits.columns]
+    # Equal-area projection (NAD83 / Conus Albers) so areas are comparable.
+    hits = hits.to_crs("EPSG:5070").copy()
+    hits["area_km2"] = (hits.area / 1e6).round(1)
+    cent = hits.geometry.centroid.to_crs("EPSG:4326")
+    hits["lon"] = cent.x.round(3)
+    hits["lat"] = cent.y.round(3)
 
-    with_pd_options(hits.sort_values("area_km2")[cols].head(args.limit))
+    # Screening proxy only. This is total points over the whole footprint,
+    # including every return, overlap and withheld point. The LBS ANPD is
+    # first-return, single source ID, non-withheld — measured properly in
+    # Stage 3. Use this to rank candidates, never to claim a quality level.
+    hits["est_pts_m2"] = (hits["count"] / (hits["area_km2"] * 1e6)).round(2)
+
+    cols = ["name", "area_km2", "count", "est_pts_m2", "lon", "lat"]
+    ranked = hits.sort_values("est_pts_m2", ascending=False)[cols]
+    if args.match:
+        ranked = ranked[ranked["name"].str.contains(args.match, case=False)]
+        print(f"filtered to {len(ranked)} matching {args.match!r}")
+    with_pd_options(ranked.head(args.limit))
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        hits.to_file(args.out, driver="GeoJSON")
+        hits.to_crs("EPSG:4326").to_file(args.out, driver="GeoJSON")
         print(f"\n[ok  ] wrote {len(hits)} footprints to {args.out}")
 
 
